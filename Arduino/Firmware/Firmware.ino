@@ -10,7 +10,6 @@
 *****************************************/
 #include <SoftwareSerial.h>
 #include <ESP8266.h>
-#include <EEPROMex.h>
 
 /*******************************
 * Pin definitions
@@ -29,8 +28,6 @@
 #define RED_LED_PIN          A2
 #define SESSION_RUNNING_PIN  YELLOW_LED_PIN
 
-#define EEPROM_ERASE_PIN     8
-
 /*******************************
 * General variables
 *******************************/
@@ -42,10 +39,6 @@ long timerLastUpdate   = 0;
 long timerValue       = 10000;         //10 seconds
 boolean timerStarted = false;
 
-/*****************************
-* Other devices
-*****************************/
-
 /*******************************
 * WiFi Stuff
 *******************************/
@@ -54,15 +47,6 @@ boolean timerStarted = false;
 //---------------------------//
 #define BAUD 9600
 ESP8266 wifi(WIFI_RX_PIN, WIFI_TX_PIN, WIFI_RST_PIN, BAUD);
-
-/****************************
-* Control Commands
-****************************/
-
-
-/****************************
-* Configuration Commands
-****************************/
 
 /*******************************
 * ThingSpeak
@@ -92,21 +76,10 @@ long SpinCounter = 0;
 float LastSpeed = 0;         //Speed in m/s
 long LastSpinTime = 0;
 float SessionDistance = 0;
-float TotalDistance = 0;    //distance in m
 float CurrentSpeed = 0.0;
-float MaxSpeed = 0;
 float MaxSessionSpeed = 0;
 boolean RunningSession = false;
 int MaxElapsedTime = 20;    //Maximum time between spins in Seconds
-
-/******************************
-* Eeprom variables
-******************************/
-int MaxSpeedEepromAddress = 0;
-int TotalDistanceEepromAddress = 4;
-long EepromUpdateDelay = 60000*60;
-long EepromLastUpdate = 0;
-
 
 /************************************
 * Setup and initializations
@@ -114,7 +87,6 @@ long EepromLastUpdate = 0;
 void setup() {
   //Set input pins
   pinMode(HALL_PIN, INPUT);
-  pinMode(EEPROM_ERASE_PIN, INPUT);
 
   //Set output pins
   pinMode(GREEN_LED_PIN, OUTPUT);
@@ -166,37 +138,7 @@ void bootUp() {
 
   wifi.setTxMode(false);
   
-   //Check if we should erase the EEPROM
-   if (digitalRead(EEPROM_ERASE_PIN)) {
-     EEPROM.updateFloat(MaxSpeedEepromAddress, 0.0);
-     EEPROM.updateFloat(TotalDistanceEepromAddress, 0.0);  
-     Serial.println("Mem erased");
-  }
-
-  //If not, get the saved values
-  else {
-    MaxSpeed = EEPROM.readFloat(MaxSpeedEepromAddress);
-    TotalDistance = EEPROM.readFloat(TotalDistanceEepromAddress);
-  }
- 
   previousHall = digitalRead(HALL_PIN);
-}
-
-
-/******************************
-* EEPROM Functions
-******************************/
-void EepromUpdate() {
-  EEPROM.updateFloat(MaxSpeedEepromAddress, MaxSpeed);
-  EEPROM.updateFloat(TotalDistanceEepromAddress, TotalDistance);  
-  EepromLastUpdate = millis();
-  Serial.println("Mem update");
-}
-
-void EepromPeriodicUpdate() {
-  if (millis() > EepromLastUpdate + EepromUpdateDelay) {
-    EepromUpdate();
-  }
 }
 
 /****************************
@@ -236,15 +178,9 @@ void CheckIfRunningSession() {
     if (ElapsedTime > MaxElapsedTime) {
       //Stop Runnning session
       RunningSession = false;
-      //Add Sesion values to total
-      TotalDistance += SessionDistance;
-      if (MaxSessionSpeed > MaxSpeed) {MaxSpeed = MaxSessionSpeed;}
 
       UpdateSessionThingSpeakTwitter();
       UpdateThingSpeak();
-      
-      //Update EEPROM
-      EepromUpdate();
       
       //Reset Sesion values
       CurrentSpeed = 0;
@@ -279,9 +215,9 @@ void UpdateThingSpeak() {
   wifi.wifiLongMessage += SpeedField;
   wifi.wifiLongMessage += String(CurrentSpeed);
   wifi.wifiLongMessage += MaxSpeedField;
-  wifi.wifiLongMessage += String(MaxSpeed);
+  wifi.wifiLongMessage += String(MaxSessionSpeed);
   wifi.wifiLongMessage += DistanceField;
-  wifi.wifiLongMessage += String(TotalDistance);
+  wifi.wifiLongMessage += String(SessionDistance);
   wifi.wifiLongMessage += "\r\n";
   
   _err = wifi.sendLongMessage("SEND OK", true);
